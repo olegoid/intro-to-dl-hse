@@ -1,4 +1,5 @@
 import torch
+import math
 import seaborn as sns
 import matplotlib.pyplot as plt
 from typing import List, Optional, Any
@@ -7,7 +8,6 @@ from torch.utils.data import DataLoader
 from IPython.display import clear_output
 from tqdm.notebook import tqdm
 from model import LanguageModel
-
 
 sns.set_style('whitegrid')
 plt.rcParams.update({'font.size': 15})
@@ -25,11 +25,9 @@ def plot_losses(train_losses: List[float], val_losses: List[float]):
     axs[0].plot(range(1, len(val_losses) + 1), val_losses, label='val')
     axs[0].set_ylabel('loss')
 
-    """
-    YOUR CODE HERE (⊃｡•́‿•̀｡)⊃━✿✿✿✿✿✿
-    Calculate train and validation perplexities given lists of losses
-    """
-    train_perplexities, val_perplexities = [], []
+    # Calculate and plot perplexities
+    train_perplexities = [math.exp(loss) for loss in train_losses]
+    val_perplexities = [math.exp(loss) for loss in val_losses]
 
     axs[1].plot(range(1, len(train_perplexities) + 1), train_perplexities, label='train')
     axs[1].plot(range(1, len(val_perplexities) + 1), val_perplexities, label='val')
@@ -57,13 +55,21 @@ def training_epoch(model: LanguageModel, optimizer: torch.optim.Optimizer, crite
     train_loss = 0.0
 
     model.train()
-    for indices, lengths in tqdm(loader, desc=tqdm_desc):
-        """
-        YOUR CODE HERE (⊃｡•́‿•̀｡)⊃━✿✿✿✿✿✿
-        Process one training step: calculate loss,
-        call backward and make one optimizer step.
-        Accumulate sum of losses for different batches in train_loss
-        """
+    for indices, lengths in loader:
+        # Move the data to the device
+        indices, lengths = indices.to(device), lengths.to(device)
+
+        # Forward pass
+        indices = indices[:, :lengths.max()].to(device)
+        logits = model(indices[:, :-1], lengths - 1)
+        loss = criterion(logits.transpose(1, 2), indices[:, 1:])
+
+        # Backpropagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        train_loss += loss.item()
 
     train_loss /= len(loader.dataset)
     return train_loss
@@ -84,12 +90,16 @@ def validation_epoch(model: LanguageModel, criterion: nn.Module,
     val_loss = 0.0
 
     model.eval()
-    for indices, lengths in tqdm(loader, desc=tqdm_desc):
-        """
-        YOUR CODE HERE (⊃｡•́‿•̀｡)⊃━✿✿✿✿✿✿
-        Process one validation step: calculate loss.
-        Accumulate sum of losses for different batches in val_loss
-        """
+    for indices, lengths in loader:
+        # Move the data to the device
+        indices, lengths = indices.to(device), lengths.to(device)
+        
+        # Forward pass
+        indices = indices[:, :lengths.max()].to(device)
+        logits = model(indices[:, :-1], lengths - 1)
+        loss = criterion(logits.transpose(1, 2), indices[:, 1:])
+
+        val_loss += loss.item()
 
     val_loss /= len(loader.dataset)
     return val_loss
